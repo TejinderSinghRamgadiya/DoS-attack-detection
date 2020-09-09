@@ -1,0 +1,302 @@
+
+
+!unzip /content/dosdataset.zip
+
+
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns; sns.set()
+
+from keras.models import Sequential, load_model
+from keras.layers import Dense, LSTM, Bidirectional
+from keras.utils import plot_model
+from keras.utils.np_utils import to_categorical
+from keras.utils import np_utils
+import tensorflow as tf
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.metrics import confusion_matrix
+from keras.callbacks import EarlyStopping
+from keras.callbacks import ModelCheckpoint
+
+teardrop = pd.read_excel('dosdataset.xlsx',0)
+pingofdeath = pd.read_excel('dosdataset.xlsx',1)
+land = pd.read_excel('dosdataset.xlsx',2)
+back = pd.read_excel('dosdataset.xlsx',3)
+normaltraffic = pd.read_excel('dosdataset.xlsx',4)
+ipsweep = pd.read_excel('dosdataset.xlsx',5)
+smurf = pd.read_excel('dosdataset.xlsx',6)
+neptune = pd.read_excel('dosdataset.xlsx',7)
+
+data = pd.concat([teardrop,pingofdeath,land,back,normaltraffic,ipsweep,smurf,neptune])
+
+data.head()
+
+data.shape
+
+def encode_text_dummy(df, name):
+  dummies = pd.get_dummies(df[name])
+  for x in dummies.columns:
+      dummy_name = f"{name}-{x}"
+      df[dummy_name] = dummies[x]
+  df.drop(name, axis=1, inplace=True)
+
+def encode_numeric_zscore(df, name, mean=None, sd=None):
+    if mean is None:
+        mean = df[name].mean()
+
+    if sd is None:
+        sd = df[name].std()
+
+    df[name] = (df[name] - mean) / sd
+
+encode_numeric_zscore(data, 'duration')
+encode_text_dummy(data, 'protocol_type')
+encode_text_dummy(data, 'service')
+encode_text_dummy(data, 'flag')
+encode_numeric_zscore(data, 'src_bytes')
+encode_numeric_zscore(data, 'dst_bytes')
+encode_text_dummy(data, 'land')
+encode_numeric_zscore(data, 'wrong_fragment')
+encode_numeric_zscore(data, 'urgent')
+encode_numeric_zscore(data, 'hot')
+encode_numeric_zscore(data, 'num_failed_logins')
+encode_text_dummy(data, 'logged_in')
+encode_numeric_zscore(data, 'num_compromised')
+encode_numeric_zscore(data, 'root_shell')
+encode_numeric_zscore(data, 'su_attempted')
+encode_numeric_zscore(data, 'num_root')
+encode_numeric_zscore(data, 'num_file_creations')
+encode_numeric_zscore(data, 'num_shells')
+encode_numeric_zscore(data, 'num_access_files')
+encode_numeric_zscore(data, 'num_outbound_cmds')
+encode_text_dummy(data, 'is_host_login')
+encode_text_dummy(data, 'is_guest_login')
+encode_numeric_zscore(data, 'count')
+encode_numeric_zscore(data, 'srv_count')
+encode_numeric_zscore(data, 'serror_rate')
+encode_numeric_zscore(data, 'srv_serror_rate')
+encode_numeric_zscore(data, 'rerror_rate')
+encode_numeric_zscore(data, 'srv_rerror_rate')
+encode_numeric_zscore(data, 'same_srv_rate')
+encode_numeric_zscore(data, 'diff_srv_rate')
+encode_numeric_zscore(data, 'srv_diff_host_rate')
+encode_numeric_zscore(data, 'dst_host_count')
+encode_numeric_zscore(data, 'dst_host_srv_count')
+encode_numeric_zscore(data, 'dst_host_same_srv_rate')
+encode_numeric_zscore(data, 'dst_host_diff_srv_rate')
+encode_numeric_zscore(data, 'dst_host_same_src_port_rate')
+encode_numeric_zscore(data, 'dst_host_srv_diff_host_rate')
+encode_numeric_zscore(data, 'dst_host_serror_rate')
+encode_numeric_zscore(data, 'dst_host_srv_serror_rate')
+encode_numeric_zscore(data, 'dst_host_rerror_rate')
+encode_numeric_zscore(data, 'dst_host_srv_rerror_rate')
+#we filter the missing values
+data.dropna(inplace=True, axis=1)
+
+x_columns = data.columns.drop('outcome') #we have dropped the last column here
+x = data[x_columns].values #we have taken the first 41 labeled columns as x
+dummies = pd.get_dummies(data['outcome']) 
+outcomes = dummies.columns
+num_classes = len(outcomes)
+y = dummies.values
+
+features=[ 'duration', 'protocol_type', 'service','flag', 'src_bytes', 'dst_bytes', 'land', 'wrong_fragment',     'urgent', 'hot', 'num_failed_logins', 'logged_in', 'num_compromised', 'root_shell','su_attempted', 'num_root', 'num_file_creations', 'num_shells', 'num_access_files','num_outbound_cmds', 'is_host_login', 'is_guest_login', 'count','srv_count', 'serror_rate', 'srv_serror_rate', 'rerror_rate','srv_rerror_rate','same_srv_rate','diff_srv_rate','srv_diff_host_rate','dst_host_count','dst_host_srv_count','dst_host_same_srv_rate','dst_host_diff_srv_rate','dst_host_same_src_port_rate','dst_host_srv_diff_host_rate','dst_host_serror_rate','dst_host_srv_serror_rate','dst_host_rerror_rate','dst_host_srv_rerror_rate']
+
+from sklearn.model_selection import train_test_split
+seed= 7
+x_train, x_test, y_train, y_test = train_test_split(x, y, random_state=seed)
+
+#Tuning model to minimum loss
+es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=200)
+#mc = ModelCheckpoint('best_model.h5', monitor='val_accuracy', mode='max', verbose=1, save_best_only=True)
+
+model_rnn = Sequential()
+model_rnn.add(Dense(300,input_dim= x.shape[1],kernel_initializer='normal',activation='relu'))
+model_rnn.add(Dense(300,kernel_initializer='normal',activation='relu'))
+model_rnn.add(Dense(y.shape[1],kernel_initializer='normal',activation='softmax'))
+model_rnn.compile(loss='binary_crossentropy',optimizer='adam',metrics=['accuracy'])
+
+# Commented out IPython magic to ensure Python compatibility.
+# #history_rnn = model_rnn.fit(x_train, y_train, epochs = 40, callbacks=[callbacks],validation_split=0.2, verbose = 1)
+# %%time 
+# history_rnn= model_rnn.fit(x_train, y_train, validation_data=(x_test, y_test), epochs=50, verbose=0, callbacks=[es])
+
+y_pred = model_rnn.predict(x_test)
+
+import numpy as np
+np.argmax(y_pred, axis=1)
+
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import precision_score
+from sklearn.metrics import recall_score
+from sklearn.metrics import f1_score
+from sklearn.metrics import cohen_kappa_score
+from sklearn.metrics import roc_auc_score
+from sklearn.metrics import confusion_matrix
+
+# accuracy: (tp + tn) / (p + n)
+accuracy = accuracy_score(y_test.argmax(axis=1), y_pred.argmax(axis=1))
+print('Accuracy: %f' % accuracy)
+# # precision tp / (tp + fp)
+precision = precision_score(y_test.argmax(axis=1), y_pred.argmax(axis=1))
+print('Precision: %f' % precision)
+# # recall: tp / (tp + fn)
+recall = recall_score(y_test.argmax(axis=1), y_pred.argmax(axis=1))
+print('Recall: %f' % recall)
+# # f1: 2 tp / (2 tp + fp + fn)
+f1 = f1_score(y_test.argmax(axis=1), y_pred.argmax(axis=1))
+print('F1 score: %f' % f1)
+
+# kappa
+kappa = cohen_kappa_score(y_test.argmax(axis=1), y_pred.argmax(axis=1))
+print('Cohens kappa score: %f' % kappa)
+# ROC AUC
+auc = roc_auc_score(y_test.argmax(axis=1), y_pred.argmax(axis=1))
+print('ROC AUC: %f' % auc)
+
+matrix = confusion_matrix(y_test.argmax(axis=1), y_pred.argmax(axis=1))
+print("Confusion Matrix \n",matrix)
+
+# # kappa
+# kappa = cohen_kappa_score(y_test.argmax(axis=1), y_pred.argmax(axis=1))
+# print('Cohens kappa: %f' % kappa)
+# # ROC AUC
+# auc = roc_auc_score(y_test.argmax(axis=1), y_pred.argmax(axis=1))
+# print('ROC AUC: %f' % auc)
+# # # confusion matrix
+# # matrix = confusion_matrix(y_test.argmax(axis=1), y_pred.argmax(axis=1))
+# # print(matrix)
+
+#saved_model = load_model('best_model.h5')
+# evaluate the model
+_, train_acc = model_rnn.evaluate(x_train, y_train, verbose=0)
+_, test_acc = model_rnn.evaluate(x_test, y_test, verbose=0)
+print('Train: %.3f, Test: %.3f' % (train_acc, test_acc))
+
+# Plot training & validation accuracy values
+plt.plot(history_rnn.history['accuracy'])
+plt.plot(history_rnn.history['val_accuracy'])
+plt.title('Rnn_Model Accuracy')
+plt.ylabel('Accuracy')
+plt.xlabel('Epoch')
+plt.legend(['Train', 'Test'], loc='lower right')
+plt.savefig('Model Accuracy.png')
+plt.show()
+
+# Plot training & validation loss values
+plt.plot(history_rnn.history['loss'])
+plt.plot(history_rnn.history['val_loss'])
+plt.title('Model_Rnn  Loss')
+plt.ylabel('Loss')
+plt.xlabel('Epoch')
+plt.legend(['Train', 'Test'], loc='upper left')
+plt.savefig('Model_Rnn Loss.png')
+plt.show()
+
+"""**LSTM**"""
+
+y.unique()
+
+features = len(x[0])
+samples = x.shape[0]
+
+train_len = 115
+input_len = samples - train_len
+I = np.zeros((samples - train_len, train_len, features))
+
+for i in range(input_len):
+    temp = np.zeros((train_len, features))
+    for j in range(i, i + train_len - 1):
+        temp[j-i] = x[j]
+    I[i] = temp
+
+X_train, X_test, Y_train, Y_test = train_test_split(I, y[115:100000], test_size = 0.2)
+
+x.shape
+
+def create_lstm():
+    
+    model = Sequential()
+    
+    model.add(Bidirectional(LSTM(128, activation='tanh', kernel_regularizer='l2')))
+    model.add(Dense(128, activation = 'relu', kernel_regularizer='l2'))
+    model.add(Dense(2, activation = 'sigmoid', kernel_regularizer='l2'))
+    
+    model.compile(loss = 'binary_crossentropy', optimizer = 'adam', metrics = ['accuracy'])
+    
+    return model
+
+#from keras.models import Sequential
+#from keras.layers import Dense, Dropout, Activation
+#from keras.optimizers import SGD
+
+model = create_lstm()
+
+print(x_train.shape)
+print(x_test.shape)
+print(y_train.shape)
+print(y_test.shape)
+
+# Commented out IPython magic to ensure Python compatibility.
+# %%time
+# history = model.fit(x_train, y_train, epochs = 40,validation_data=(x_test, y_test), verbose = 1,callbacks=[es])
+
+Y_pred = model.predict(X_test)
+
+# accuracy: (tp + tn) / (p + n)
+accuracy = accuracy_score(Y_test.argmax(axis=1), Y_pred.argmax(axis=1))
+print('Accuracy: %f' % accuracy)
+# # precision tp / (tp + fp)
+precision = precision_score(Y_test.argmax(axis=1), Y_pred.argmax(axis=1))
+print('Precision: %f' % precision)
+# # recall: tp / (tp + fn)
+recall = recall_score(Y_test.argmax(axis=1), Y_pred.argmax(axis=1))
+print('Recall: %f' % recall)
+# # f1: 2 tp / (2 tp + fp + fn)
+f1 = f1_score(Y_test.argmax(axis=1), Y_pred.argmax(axis=1))
+print('F1 score: %f' % f1)
+
+# kappa
+kappa = cohen_kappa_score(Y_test.argmax(axis=1), Y_pred.argmax(axis=1))
+print('Cohens kappa score: %f' % kappa)
+# ROC AUC
+auc = roc_auc_score(Y_test.argmax(axis=1), Y_pred.argmax(axis=1))
+print('ROC AUC: %f' % auc)
+# confusion matrix
+matrix = confusion_matrix(Y_test.argmax(axis=1), Y_pred.argmax(axis=1))
+print("Confusion Matrix \n", matrix)
+
+# Accuracy: 0.999139
+# Precision: 0.999203
+# Recall: 0.998804
+# F1 score: 0.999003
+# Cohens kappa score: 0.998245
+# ROC AUC: 0.999099
+
+# Plot training & validation accuracy values
+plt.plot(history.history['accuracy'])
+plt.plot(history.history['val_accuracy'])
+plt.title('LSTM_Model Accuracy')
+plt.ylabel('Accuracy')
+plt.xlabel('Epoch')
+plt.legend(['Train', 'Test'], loc='lower right')
+plt.savefig('LSTM_Model Accuracy.png')
+plt.show()
+
+# Plot training & validation loss values
+plt.plot(history.history['loss'])
+plt.plot(history.history['val_loss'])
+plt.title('LSTM_Model  Loss')
+plt.ylabel('Loss')
+plt.xlabel('Epoch')
+plt.legend(['Train', 'Test'], loc='upper left')
+plt.savefig('Model Loss.png')
+plt.show()
+
+# evaluate the model
+_, train_acc = model.evaluate(X_train, Y_train, verbose=0)
+_, test_acc = model.evaluate(X_test, Y_test, verbose=0)
+print('Train: %.3f, Test: %.3f' % (train_acc, test_acc))
